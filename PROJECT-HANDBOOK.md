@@ -106,6 +106,13 @@
 - **双仓库推送验证**：HEAD `e0f7016` 在 origin + gitee 完全同步
 - **git hook 正常工作**：非版本变更 commit 正确跳过自动推送
 
+### Day 10 续 — 全局 Skill 部署
+- **问题**：`.codebuddy/skills/` 下的 workflow.md / release.md 是项目级 skill，仅在 voice2text 项目中生效，无法跨项目复用
+- **解决方案**：将核心规则提炼为两个**全局 skill**，部署到 `~/.codebuddy/skills/`（在任意项目中均可通过 `use_skill` 加载）：
+  - **`baseline-workflow`** — BASELINE.toml 三级文件分类、五阶段闭环 SOP、Debug 三层策略、8 项质量门禁、Git 双仓库规范、版本自动推送、回滚操作
+  - **`tauri-app-release`** — Tauri 2 macOS 发布管道：依赖自包含体系 (bundle-all.sh)、DMG 构建 (create-dmg)、版本号三处同步、质量门禁 G1-G6、Tauri v2 5 大陷阱 + DMG 4 大陷阱、交付后去隔离、发布检查清单
+- **Skill 格式**：遵循 `~/.codebuddy/skills/<name>/SKILL.md` + YAML frontmatter 标准格式
+
 ---
 
 ## 二、技术架构
