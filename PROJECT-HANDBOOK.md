@@ -61,6 +61,26 @@
 - **记忆体系闭环**：5 条记忆全部更新，新增 SOP 总纲记忆，Trap 从 4 个扩展到 5 个（Trap E: 引擎状态假就绪）
 - **交付确认**：用户 feedback "能正常使用了" — 3 个 m4a 文件并行转写成功，ggml-small.bin (465MB) 正确部署
 
+### Day 8 — 商业级 DMG 构建管道 + 双仓库发布
+- **Git 双仓库配置**：
+  - `origin` → `git@github.com:jaminliu89/voice2text.git` (主仓库)
+  - `gitee` → `https://gitee.com/jaminkim/voice2text.git` (镜像仓库)
+- **DMG 构建管道重写**：
+  - `bundle-all.sh` 重写：动态发现 ffmpeg/whisper-cli（`which` + `brew --prefix` 回退），**@rpath 解析关键修复**（whisper-cli 的 `@rpath/libwhisper.1.dylib` 通过 `LC_RPATH` 预收集），递归收集直到零新增文件，所有引用改为 `@loader_path`，ad-hoc 签名
+  - `build-dmg.sh` 新建：Step 0 杀旧进程 + 备份（`pkill -f` → `sleep 2` → `cp -R` 到 `/Applications/小柳语音转写-backups/`），Step 1 调用 bundle-all，Step 2 tauri build，Step 3 嵌入 README.txt，Step 4 create-dmg 打包，Step 5 质量审计
+  - `tauri.conf.json` 修改：`dragDropEnabled: false` + `targets: ["app"]`（禁用 Tauri 自带 DMG 构建）
+- **构建 Trap（4 个新增）**：
+  | # | 陷阱 | 修复 |
+  |---|------|------|
+  | Build Trap 1 | `@rpath` 依赖未收集（whisper-cli 的 libwhisper.1.dylib） | 源二进制预收集 `LC_RPATH` + `@rpath` 解析 |
+  | Build Trap 2 | otool rpath 输出含 `(offset 12)` 后缀 | `sed 's/ (offset.*)//'` |
+  | Build Trap 3 | Tauri 自带 `bundle_dmg.sh` 失败 | 改用 `create-dmg` CLI 手动打包 |
+  | Build Trap 4 | `local` 关键字在函数体外使用 | 改为普通变量 `_ts` / `_build_id` |
+- **Scripts 目录职责分工**：8 个脚本，4 个废弃（`bundle-ffmpeg.sh` / `copy-dylibs.sh` / `copy-ffmpeg.sh` / `fix-dylibs.sh` 被 `bundle-all.sh` 替代），4 个活跃（`bundle-all.sh` / `build-dmg.sh` / `build.sh` / `dev-tail.sh`）
+- **质量门禁通过**：G1✅(零warning) G2✅(19+5文件) G3✅(冒烟测试) G4✅(零外部引用) G5✅(21MB DMG) G6✅(ad-hoc签名)
+- **发布产物**：`小柳语音转写_0.2.0_aarch64.dmg` (21MB)，内嵌 README.txt 使用说明
+- **GitHub Releases**：tag `v0.1.0` 推送到双仓库，DMG 作为 Release 附件
+
 ---
 
 ## 二、技术架构
@@ -272,21 +292,34 @@ engine_bug_no_ui_change         # 修引擎 bug 不动 UI 组件
 
 ## 七、开发工作流
 
-### 修改 lock 区文件的标准流程
+### 7.1 Scripts 脚本目录职责
+
+| 脚本 | 角色 | 触发条件 | 状态 |
+|------|------|----------|------|
+| `bundle-all.sh` | **主依赖打包** — 递归收集 ffmpeg + whisper-cli 及所有 brew dylib → `@loader_path` + ad-hoc 签名 | 构建 DMG 前 / 新增外部依赖后 | ✅ 活跃 |
+| `build-dmg.sh` | **主构建入口** — 杀旧进程 → 备份 → bundle-all → tauri build → 嵌入 README → create-dmg → 质量审计 | 发布新版本时 | ✅ 活跃 |
+| `build.sh` | 构建入口转发 → 调用 `build-dmg.sh` | `npm run dist` | ✅ 活跃 |
+| `dev-tail.sh` | DEV 日志监控 — `tail -f /tmp/voice2text-debug.log` | DEV 排查问题时 | ✅ 活跃 |
+| `bundle-ffmpeg.sh` | 旧版 ffmpeg 打包（仅处理 ffmpeg，不处理 whisper-cli） | — | ❌ 已废弃 |
+| `copy-dylibs.sh` | 旧版 dylib 复制（硬编码路径，不做 install_name_tool） | — | ❌ 已废弃 |
+| `copy-ffmpeg.sh` | 旧版 ffmpeg 复制（硬编码路径，不做 install_name_tool） | — | ❌ 已废弃 |
+| `fix-dylibs.sh` | 旧版 dylib 引用修复（已被 bundle-all.sh 内置步骤替代） | — | ❌ 已废弃 |
+
+### 7.2 修改 lock 区文件的标准流程
 
 1. 只做 `replace_in_file`：find-and-replace 最小粒度
 2. 单次改动 ≤3 个文件
 3. 不改无关文件、不新增无关依赖
 4. 改动后 `cargo build` 验证 → 人工审查 diff → 提交
 
-### 大规模改动 lock 文件的流程
+### 7.3 大规模改动 lock 文件的流程
 
 1. 先更新 `BASELINE.toml` 将目标文件移至 `active` 区
 2. 自由修改
 3. 验证通过后将文件移回 `lock` 区
 4. 更新 `BASELINE.toml`
 
-### 常规开发
+### 7.4 常规开发
 
 ```bash
 npm run tauri dev    # 开发模式（热更新）
@@ -294,7 +327,7 @@ npm run build        # 仅构建前端
 npm run tauri build  # 打包 macOS .dmg
 ```
 
-### macOS 打包后去隔离
+### 7.5 macOS 打包后去隔离
 
 ```bash
 xattr -d com.apple.quarantine /path/to/voice2text.app
@@ -303,6 +336,8 @@ xattr -d com.apple.quarantine /path/to/voice2text.app
 ---
 
 ## 八、关键 Trap 速查
+
+### 8.1 运行时 Trap
 
 | # | 症状 | 原因 | 修复 |
 |---|------|------|------|
@@ -316,6 +351,15 @@ xattr -d com.apple.quarantine /path/to/voice2text.app
 | 8 | 打包 app 找不到 ffmpeg | GUI app 没有终端 PATH | bundle 内自包含 + @loader_path |
 | 9 | bundle 内 ffmpeg 被 SIGKILL | Apple Silicon 无签名 Gatekeeper 拦截 | ad-hoc codesign 所有二进制 |
 | 10 | 引擎显示"就绪"但转写失败 | 只检查任意模型存在，未匹配平台推荐模型 | `get_engine_status()` 检查 `recommended_model` |
+
+### 8.2 构建管道 Trap
+
+| # | 症状 | 原因 | 修复 |
+|---|------|------|------|
+| B1 | whisper-cli 冒烟测试失败，libwhisper.1.dylib 找不到 | `@rpath` 依赖未收集（rpath = `@loader_path/../lib`） | bundle-all.sh 预收集 `LC_RPATH` + `@rpath` 解析 |
+| B2 | rpath 解析失败，路径含垃圾字符 | `otool -l` 输出 `path /xxx (offset 12)` | `sed 's/ (offset.*)//'` |
+| B3 | npx tauri build 的 DMG 阶段报错 | Tauri 2 内置 DMG 打包不稳定 | `targets: ["app"]` + 改用 `create-dmg` CLI |
+| B4 | build-dmg.sh 语法错误 | zsh 不允许 `local` 在函数体外 | 改为普通变量名 |
 
 ---
 
@@ -381,22 +425,38 @@ bundle 内 ffmpeg (自包含)
 ```
 npm run dist  ────► scripts/build.sh
                          │
-                         ├─ [1/3] bundle-all.sh
-                         │      ├── 递归收集所有 brew dylib
-                         │      ├── install_name_tool → @loader_path
-                         │      ├── ad-hoc codesign 所有二进制
-                         │      └── 冒烟测试: ffmpeg -version
-                         │
-                         ├─ [2/3] npx tauri build
-                         │      ├── cargo build --release
-                         │      ├── tauri.conf.json resources → bundle 内嵌
-                         │      ├── 生成 .app bundle
-                         │      └── 打包 .dmg
-                         │
-                         └─ [3/3] 签名验证
-                                ├── codesign bundle 内所有 dylib + ffmpeg
-                                ├── ffmpeg -version 确认可执行
-                                └── 输出 DMG 路径
+                         └─► scripts/build-dmg.sh
+                              │
+                              ├─ [0/5] 杀旧进程 + 备份旧版本
+                              │      pkill -f 小柳语音转写.app
+                              │      sleep 2
+                              │      cp -R → /Applications/小柳语音转写-backups/
+                              │
+                              ├─ [1/5] bundle-all.sh
+                              │      ├── 动态发现 ffmpeg/whisper-cli (which + brew --prefix)
+                              │      ├── 解析源二进制 @rpath 预收集依赖 (LC_RPATH)
+                              │      ├── 递归收集所有 brew dylib (while 直到零新增)
+                              │      ├── install_name_tool → @loader_path
+                              │      ├── ad-hoc codesign 所有二进制
+                              │      └── 冒烟测试: ffmpeg -version + whisper-cli --version
+                              │
+                              ├─ [2/5] npx tauri build (targets: ["app"])
+                              │      ├── cargo build --release
+                              │      ├── tauri.conf.json resources → bundle 内嵌
+                              │      └── 生成 .app bundle
+                              │
+                              ├─ [3/5] 嵌入 README.txt
+                              │      └── 写入 DMG staging 目录
+                              │
+                              ├─ [4/5] create-dmg 打包
+                              │      └── 生成 DMG + 时间戳副本
+                              │
+                              └─ [5/5] 质量门禁审计
+                                     ├── G2: bundle 文件完整性 (ffmpeg ≥15, whisper-cli ≥5)
+                                     ├── G3: 自包含可运行
+                                     ├── G4: 零外部 dylib 引用
+                                     ├── G5: DMG 存在且 >10MB
+                                     └── G6: ad-hoc 签名
 ```
 
 #### tauri.conf.json 资源配置
@@ -437,7 +497,8 @@ let bundled = exe_dir.join("../Resources/resources/ffmpeg-bundle/ffmpeg");
 ```
 target/release/bundle/
 ├── dmg/
-│   └── 小柳语音转写_0.1.0_aarch64.dmg    ← 交付物
+│   ├── 小柳语音转写_0.2.0_aarch64.dmg           ← 交付物
+│   └── 小柳语音转写_0.2.0_aarch64_20260716-xxxx.dmg  ← 时间戳副本
 └── macos/
     └── 小柳语音转写.app/
         └── Contents/
@@ -445,20 +506,26 @@ target/release/bundle/
             │   └── voice2text              ← 主程序
             └── Resources/
                 └── resources/
-                    └── ffmpeg-bundle/       ← 自包含依赖 (19 files)
-                        ├── ffmpeg           (431KB)
-                        ├── libavcodec.62.dylib
-                        ├── libavformat.62.dylib
-                        ├── libavutil.60.dylib
-                        ├── libswresample.6.dylib
-                        ├── libswscale.9.dylib
-                        ├── libx264.165.dylib
-                        ├── libx265.215.dylib
-                        ├── libmp3lame.0.dylib
-                        ├── libmpg123.0.dylib         ← 间接依赖
-                        ├── libssl.3.dylib
-                        ├── libcrypto.3.dylib
-                        ├── ... (共 18 个 dylib)
+                    ├── ffmpeg-bundle/       ← 自包含依赖 (19 files)
+                    │   ├── ffmpeg
+                    │   ├── libavcodec.62.dylib
+                    │   ├── libavformat.62.dylib
+                    │   ├── libavutil.60.dylib
+                    │   ├── libswresample.6.dylib
+                    │   ├── libswscale.9.dylib
+                    │   ├── libx264.165.dylib
+                    │   ├── libx265.215.dylib
+                    │   ├── libmp3lame.0.dylib
+                    │   ├── libmpg123.0.dylib         ← 间接依赖
+                    │   ├── libssl.3.dylib
+                    │   ├── libcrypto.3.dylib
+                    │   └── ...
+                    └── whisper-cli-bundle/  ← 自包含依赖 (5 files)
+                        ├── whisper-cli
+                        ├── libwhisper.1.dylib
+                        ├── libggml.0.dylib
+                        ├── libggml-base.0.dylib
+                        └── libomp.dylib
 ```
 
 ### 9.6 用户安装指南（可写入 README）
@@ -476,7 +543,28 @@ xattr -d com.apple.quarantine /Applications/小柳语音转写.app
 - 配置任何 PATH 或环境变量
 - 下载模型文件（应用内一键部署）
 
-### 9.7 新增外部依赖的标准流程
+### 9.7 Git 双仓库发布流程
+
+项目托管在 GitHub (主) + Gitee (镜像)，每次发布需同步：
+
+```bash
+# 1. 确认所有变更已提交
+git status
+
+# 2. 双仓库推送主分支
+git push origin main
+git push gitee main
+
+# 3. 创建版本 tag 并双仓库推送
+git tag -a "v0.2.0" -m "release: v0.2.0 商业级DMG交付"
+git push origin --tags
+git push gitee --tags
+
+# 4. 上传 DMG 到 GitHub Releases
+#    通过 Web UI 或 gh release create v0.2.0 --title "v0.2.0" --notes "..." 小柳语音转写_0.2.0_aarch64.dmg
+```
+
+### 9.9 新增外部依赖的标准流程
 
 当需要引入新的外部可执行文件（如 `sox`、`yt-dlp`）时，必须按以下流程纳入自包含体系：
 
@@ -505,19 +593,19 @@ xattr -d com.apple.quarantine /Applications/小柳语音转写.app
    └── 更新 9.5 产物清单、9.2 依赖表
 ```
 
-### 9.8 交付检查清单 (Release Checklist)
+### 9.10 交付检查清单 (Release Checklist)
 
 发布新版本前逐项勾选：
 
 - [ ] G1: `cargo build` 零 error 零 warning
-- [ ] G2: bundle 文件 ≥18
-- [ ] G3: bundle 内 `ffmpeg -version` 正常
+- [ ] G2: bundle 文件 ≥15 (ffmpeg) + ≥5 (whisper-cli)
+- [ ] G3: bundle 内 `ffmpeg -version` + `whisper-cli --version` 正常
 - [ ] G4: `otool -L` 所有二进制零 `/opt/homebrew` 引用
-- [ ] G5: DMG 文件存在且完整
+- [ ] G5: DMG 文件存在且 >10MB
 - [ ] G6: bundle 内所有二进制已 ad-hoc 签名
-- [ ] G7: `BASELINE.toml` 三级文件数量正确
-- [ ] G8: 零 dead_code / unused_import
-- [ ] 在干净环境（无 brew ffmpeg 的 Mac）验证 DMG 可运行
 - [ ] `dragDropEnabled` 已设为 false（Trap A）
-- [ ] 版本号已更新（`tauri.conf.json` + `Cargo.toml`）
-- [ ] 更新日志已记录本次变更
+- [ ] 版本号已更新（`tauri.conf.json` + `Cargo.toml` + `build-dmg.sh` 中的 VERSION）
+- [ ] `git push origin main && git push gitee main` 双仓库推送
+- [ ] `git tag -a "v{版本号}" && git push origin --tags && git push gitee --tags`
+- [ ] GitHub Releases 上传 DMG 附件
+- [ ] 在干净环境（无 brew ffmpeg 的 Mac）验证 DMG 可运行

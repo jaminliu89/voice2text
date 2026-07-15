@@ -224,6 +224,92 @@ steps = [
   "5. 输出闭环总结：改了哪些文件、学到了什么、下次如何避免"
 ]
 
+[workflow.sop.release]
+# 发布阶段 — 交付后必须执行的外部发布流程
+name = "外部发布"
+steps = [
+  "1. 确认质量门禁 G1-G6 全部通过（见 PROJECT-HANDBOOK.md 9.4）",
+  "2. 更新版本号：tauri.conf.json + Cargo.toml + build-dmg.sh 中的 VERSION",
+  "3. 构建 DMG：zsh scripts/build-dmg.sh（会自动杀旧进程 + 备份旧版本 + 嵌入 README）",
+  "4. Git tag：git tag -a 'v{版本号}' -m 'release: v{版本号} {简短描述}' → git push origin --tags",
+  "5. 双仓库推送：git push origin main && git push gitee main",
+  "6. GitHub Releases：通过 gh release create 或 Web UI 上传 DMG 作为附件",
+  "7. 验证：在新环境下载 DMG → 去隔离 → 运行 → 确认功能完整"
+]
+
+# ═══════════════════════════════════════════
+# 脚本目录职责 (scripts/)
+# ═══════════════════════════════════════════
+
+[workflow.scripts]
+description = """
+  8 个脚本的职责分工，避免混淆。
+"""
+
+[workflow.scripts."bundle-all.sh"]
+role = "主依赖打包"
+desc = "递归收集 ffmpeg + whisper-cli 及所有 brew dylib，install_name_tool → @loader_path，ad-hoc 签名。零硬编码路径。"
+trigger = "构建 DMG 前 / 新增外部依赖后"
+output = "src-tauri/resources/ffmpeg-bundle/ + whisper-cli-bundle/"
+
+[workflow.scripts."build-dmg.sh"]
+role = "主构建入口"
+desc = "完整 DMG 构建管道：杀旧进程 → 备份 → bundle-all → tauri build → 嵌入 README → create-dmg → 质量审计"
+trigger = "发布新版本时"
+output = "src-tauri/target/release/bundle/dmg/小柳语音转写_{ver}_{arch}.dmg + 时间戳副本"
+
+[workflow.scripts."build.sh"]
+role = "构建入口转发"
+desc = "一键入口，转发到 build-dmg.sh"
+trigger = "npm run dist"
+
+[workflow.scripts."dev-tail.sh"]
+role = "DEV 日志监控"
+desc = "tail -f /tmp/voice2text-debug.log，开发调试用"
+trigger = "DEV 模式排查问题时"
+
+[workflow.scripts."bundle-ffmpeg.sh"]
+role = "旧版打包（已废弃）"
+desc = "仅打包 ffmpeg 到 resources/bundled/，不处理 whisper-cli。已被 bundle-all.sh 替代。"
+status = "deprecated"
+
+[workflow.scripts."copy-dylibs.sh"]
+role = "旧版复制（已废弃）"
+desc = "硬编码 ffmpeg 8.1.2_1 路径，仅复制不做 install_name_tool。已被 bundle-all.sh 替代。"
+status = "deprecated"
+
+[workflow.scripts."copy-ffmpeg.sh"]
+role = "旧版复制（已废弃）"
+desc = "硬编码路径复制 ffmpeg + 第一层 dylib 到 resources/bundled/。已被 bundle-all.sh 替代。"
+status = "deprecated"
+
+[workflow.scripts."fix-dylibs.sh"]
+role = "旧版修复（已废弃）"
+desc = "修复已复制到 ffmpeg-bundle/ 的 dylib 引用。已被 bundle-all.sh 内置的 install_name_tool 步骤替代。"
+status = "deprecated"
+
+# ═══════════════════════════════════════
+# Git 双仓库推送规范
+# ═══════════════════════════════════════
+
+[workflow.git]
+description = """
+  项目同时托管在 GitHub 和 Gitee，每次发布需双仓库同步。
+"""
+remotes = [
+  {name = "origin", url = "git@github.com:jaminliu89/voice2text.git", role = "primary"},
+  {name = "gitee", url = "https://gitee.com/jaminkim/voice2text.git", role = "mirror"}
+]
+
+[workflow.git.push_checklist]
+steps = [
+  "1. git status 确认无未提交变更",
+  "2. git push origin main 推主仓库",
+  "3. git push gitee main 推镜像仓库",
+  "4. git push origin --tags && git push gitee --tags 推送 tag",
+  "5. GitHub Releases 页面确认 DMG 附件已上传"
+]
+
 # ═══════════════════════════════════════
 # 修复方法论 (Fix Methodology)
 # ═══════════════════════════════════════
@@ -258,3 +344,34 @@ checks = [
   "引擎状态：平台推荐模型不存在 → 显示正确提示而非假就绪",
   "竞态：快速连续操作、并发文件 → 状态不混乱"
 ]
+
+# ═══════════════════════════════════════
+# DMG 构建 Trap 速查 (构建管道专用)
+# ═══════════════════════════════════════
+
+[workflow.build_traps]
+description = "DMG 构建过程中发现的关键陷阱"
+
+[workflow.build_traps."trap-1"]
+name = "@rpath 依赖未收集"
+symptom = "whisper-cli 冒烟测试失败，libwhisper.1.dylib 找不到"
+cause = "whisper-cli 依赖 @rpath/libwhisper.1.dylib（rpath = @loader_path/../lib），otool -L 不显示绝对路径，递归收集时漏掉"
+fix = "bundle-all.sh 在复制源二进制前解析 LC_RPATH → 解析 @rpath 引用 → 预收集依赖"
+
+[workflow.build_traps."trap-2"]
+name = "otool rpath 输出含 offset 后缀"
+symptom = "sed 解析 rpath 失败，路径带 '(offset 12)' 垃圾字符"
+cause = "otool -l 输出的 path 行格式为 'path /xxx (offset 12)'"
+fix = "sed 's/ (offset.*)//' 去掉后缀"
+
+[workflow.build_traps."trap-3"]
+name = "Tauri 自带 DMG 构建失败"
+symptom = "npx tauri build 的 bundle_dmg.sh 阶段报错"
+cause = "Tauri 2 内置的 DMG 打包器在某些环境下不稳定"
+fix = "tauri.conf.json → bundle.targets = ['app'] 禁用 Tauri DMG 构建，改用 create-dmg CLI 手动打包"
+
+[workflow.build_traps."trap-4"]
+name = "local 关键字在顶层函数外使用"
+symptom = "build-dmg.sh 报语法错误"
+cause = "zsh 不允许 local 声明在函数体外"
+fix = "改用普通变量名（如 _ts, _build_id）"

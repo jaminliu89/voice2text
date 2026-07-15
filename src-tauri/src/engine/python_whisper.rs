@@ -48,20 +48,62 @@ pub fn detect_full() -> CompatDetection {
     }
 }
 
-/// Step 1: 检测 whisper CLI（三级回退：bundle > which > 硬编码 pip 路径）
+/// Step 1: 检测 whisper CLI（bundle > which > Python bin 反推 > 硬编码）
 fn detect_whisper_cli() -> Option<PathBuf> {
-    crate::engine::resolve_tool_path("whisper", &[
+    // 1) bundle + which + 硬编码回退
+    if let Some(p) = crate::engine::resolve_tool_path("whisper", &[
         "/opt/homebrew/bin/whisper",
         "/usr/local/bin/whisper",
-    ])
-    .or_else(|| {
-        // whisper CLI 通常安装在 python 的 bin 目录，不在通用 PATH 中
-        for py_base in &["/opt/homebrew/bin", "/usr/local/bin"] {
-            let p = PathBuf::from(format!("{}/whisper", py_base));
-            if p.exists() { return Some(p); }
+    ]) {
+        return Some(p);
+    }
+
+    // 2) 通过已知的 python3 路径反推 whisper CLI 位置
+    //    pip install openai-whisper 将 whisper 装在 python3 同级 bin/ 下
+    //    关键：python3 可能是 symlink → 需要 canonicalize 拿到真实路径
+    for py_path in resolve_python_paths() {
+        // 解析 symlink → 真实路径
+        let real_py = std::fs::canonicalize(&py_path).unwrap_or(py_path);
+        if let Some(parent) = real_py.parent() {
+            let whisper_bin = parent.join("whisper");
+            if whisper_bin.exists() {
+                eprintln!("[detect_whisper_cli] found via python path (canonicalized): {}", whisper_bin.display());
+                return Some(whisper_bin);
+            }
         }
-        None
-    })
+    }
+
+    // 3) Python Framework 安装（python.org 官方安装器）
+    //    python3 在 /Library/Frameworks/Python.framework/Versions/3.x/bin/
+    let framework_glob = PathBuf::from("/Library/Frameworks/Python.framework/Versions");
+    if framework_glob.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&framework_glob) {
+            for entry in entries.flatten() {
+                let whisper_bin = entry.path().join("bin").join("whisper");
+                if whisper_bin.exists() {
+                    eprintln!("[detect_whisper_cli] found via framework: {}", whisper_bin.display());
+                    return Some(whisper_bin);
+                }
+            }
+        }
+    }
+
+    // 4) pip install --user 场景：~/Library/Python/3.x/bin/whisper
+    let home = std::env::var("HOME").unwrap_or_default();
+    let python_user_base = PathBuf::from(&home).join("Library").join("Python");
+    if python_user_base.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&python_user_base) {
+            for entry in entries.flatten() {
+                let p = entry.path().join("bin").join("whisper");
+                if p.exists() {
+                    eprintln!("[detect_whisper_cli] found via user install: {}", p.display());
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// Step 2: 检测 python3 -c "import whisper" 是否成功，获取路径和版本
@@ -218,7 +260,18 @@ pub async fn transcribe(
     opts: &TranscribeOptions,
     platform: &PlatformInfo,
 ) -> Result<Vec<Segment>, String> {
-    let bin = detect().ok_or("未检测到兼容引擎（本机 Python whisper），请安装或改用标准引擎")?;
+    // 优先用 whisper CLI；如果没有 CLI，通过 python3 -m whisper 调用
+    let det = detect_full();
+    let use_python_module = det.cli_path.is_none(); // 是否用 python -m whisper 模式
+    let bin = if let Some(cli) = det.cli_path {
+        cli
+    } else if let Some(py) = det.python_path {
+        // 没有独立的 whisper CLI，使用 python -m whisper 模式
+        eprintln!("[compat] no CLI, using python -m whisper");
+        py
+    } else {
+        return Err("未检测到兼容引擎（本机 Python whisper），请安装或改用标准引擎".into());
+    };
 
     let out_dir = std::env::temp_dir().join("voice2text_tmp");
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
@@ -233,14 +286,14 @@ pub async fn transcribe(
 
     // 优先 MPS 加速，失败自动回退 CPU
     if mps_available {
-        match run_whisper(&bin, input, opts, &out_dir, &stem, "mps").await {
+        match run_whisper(&bin, input, opts, &out_dir, &stem, "mps", use_python_module).await {
             Ok(segs) => return Ok(segs),
             Err(e) => {
                 eprintln!("[compat] MPS 加速失败（回退 CPU）: {}", e);
             }
         }
     }
-    run_whisper(&bin, input, opts, &out_dir, &stem, "cpu").await
+    run_whisper(&bin, input, opts, &out_dir, &stem, "cpu", use_python_module).await
 }
 
 async fn run_whisper(
@@ -250,8 +303,16 @@ async fn run_whisper(
     out_dir: &Path,
     stem: &str,
     device: &str,
+    use_python_module: bool,
 ) -> Result<Vec<Segment>, String> {
-    let mut cmd = TokioCommand::new(bin);
+    let mut cmd = if use_python_module {
+        // python3 -m whisper <input> --model ... --device ... --output_format json --output_dir ...
+        let mut c = TokioCommand::new(bin);
+        c.arg("-m").arg("whisper");
+        c
+    } else {
+        TokioCommand::new(bin)
+    };
     cmd.arg(input)
         .arg("--model")
         .arg(&opts.model)
@@ -298,4 +359,61 @@ async fn run_whisper(
         });
     }
     Ok(segs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_whisper_cli() {
+        let result = detect_whisper_cli();
+        eprintln!("[test] detect_whisper_cli() = {:?}", result);
+        // 本开发机上有 whisper CLI，所以期望 Some
+        assert!(result.is_some(), "whisper CLI 应能检测到");
+    }
+
+    #[test]
+    fn test_detect_full() {
+        let det = detect_full();
+        eprintln!("[test] cli_path = {:?}", det.cli_path);
+        eprintln!("[test] python_path = {:?}", det.python_path);
+        eprintln!("[test] version = {:?}", det.version);
+        eprintln!("[test] ffmpeg = {}", det.ffmpeg_available);
+        eprintln!("[test] cached_models = {:?}", det.cached_models);
+        assert!(det.cli_path.is_some() || det.python_path.is_some(), "至少有一个检测通道可用");
+        assert!(det.ffmpeg_available, "ffmpeg 应可用");
+    }
+
+    #[test]
+    fn test_detect_python_whisper() {
+        let (path, ver) = detect_python_whisper();
+        eprintln!("[test] python path = {:?}, version = {:?}", path, ver);
+        assert!(path.is_some(), "python3 应能 import whisper");
+        assert!(ver.is_some(), "应能获取版本号");
+    }
+
+    #[test]
+    fn test_resolve_python_paths() {
+        let paths = resolve_python_paths();
+        eprintln!("[test] resolved python paths = {:?}", paths);
+        assert!(!paths.is_empty(), "至少有一个 python3 路径");
+    }
+
+    #[test]
+    fn test_python3_minus_m_whisper() {
+        // 验证 python3 -m whisper 可用（CLI 找不到时的回退方案）
+        for py in resolve_python_paths() {
+            let out = std::process::Command::new(&py)
+                .args(["-m", "whisper", "--help"])
+                .output();
+            if let Ok(o) = out {
+                if o.status.success() {
+                    eprintln!("[test] {} -m whisper --help ✓", py.display());
+                    return; // pass
+                }
+            }
+        }
+        panic!("python3 -m whisper 不可用");
+    }
 }

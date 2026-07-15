@@ -90,8 +90,8 @@ pub fn get_engine_status(app: tauri::AppHandle) -> EngineStatus {
         .cli_path
         .map(|p| p.to_string_lossy().into());
     let compat_note = if !has_cli && has_python {
-        // Python 可 import 但 CLI 不在 PATH 中
-        Some("已安装但 whisper 命令不在 PATH 中，需 pip install --user 或调整 PATH".into())
+        // Python 可 import whisper 但 CLI 未找到 → 将通过 python -m whisper 方式调用
+        None
     } else if has_cli && !compat_detect.ffmpeg_available {
         Some("whisper 已就绪，但缺少 ffmpeg（部分音频格式可能无法处理）".into())
     } else if !has_cli && !has_python {
