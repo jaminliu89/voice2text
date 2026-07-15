@@ -19,31 +19,36 @@
 ## 二、完整发布流程
 
 ```bash
-# Step 1: 确认质量门禁 G1-G6
-cargo build --manifest-path src-tauri/Cargo.toml  # G1
-# ... G2-G6 见 workflow.md
+# Step 1: 确认质量门禁 G1-G8
+cargo build --manifest-path src-tauri/Cargo.toml  # G1 零 warning
+# ... G2-G8 见 workflow.md
 
-# Step 2: 更新版本号（三处）
-# tauri.conf.json / Cargo.toml / build-dmg.sh
+# Step 2: 更新版本号（三处同步）
+# src-tauri/tauri.conf.json → "version": "0.2.1"
+# src-tauri/Cargo.toml      → version = "0.2.1"
+# scripts/build-dmg.sh      → VERSION="0.2.1"
 
 # Step 3: 构建 DMG
 zsh scripts/build-dmg.sh
 
-# Step 4: 提交版本变更
+# Step 4: 提交版本变更 + 自动推送
+# commit 后 post-commit hook 自动检测版本变更 → push 双仓库
 git add src-tauri/tauri.conf.json src-tauri/Cargo.toml scripts/build-dmg.sh
-git commit -m "release: v0.2.0 {描述}"
+git commit -m "release: v0.2.1 {描述}"
 
-# Step 5: 创建 tag
-git tag -a "v0.2.0" -m "release: v0.2.0 {描述}"
+# Step 5: 创建 tag（手动，hook 不自动打 tag）
+git tag -a "v0.2.1" -m "release: v0.2.1 {描述}"
 
-# Step 6: 双仓库推送
-git push origin main && git push gitee main
+# Step 6: 推送 tag 到双仓库
 git push origin --tags && git push gitee --tags
 
-# Step 7: GitHub Releases
-# 通过 Web UI 上传 DMG 附件
-# 或: gh release create v0.2.0 --title "v0.2.0" --notes "..." DMG文件
+# Step 7: GitHub Releases 上传 DMG
+gh release create v0.2.1 --title "v0.2.1" --notes "..." \
+
+  小柳语音转写_0.2.1_aarch64.dmg
 ```
+
+> **关键**：Step 4 commit 后 hook 自动触发 `auto-push-on-version.sh`，检测到版本文件变更后自动 push origin+gitee main 分支。tag 仍需手动打并推送。
 
 ---
 
@@ -119,8 +124,13 @@ xattr -d com.apple.quarantine /Applications/小柳语音转写.app
 - [ ] G4: otool -L 零 /opt/homebrew 引用
 - [ ] G5: DMG >10MB
 - [ ] G6: ad-hoc 签名
-- [ ] dragDropEnabled: false
-- [ ] 版本号三处同步
-- [ ] git push origin main && git push gitee main
-- [ ] git tag + git push --tags
+- [ ] G7: BASELINE.toml lock=19, stable=8, active=3
+- [ ] G8: 零 unused import / dead_code
+- [ ] dragDropEnabled: false (Tauri trap A)
+- [ ] 版本号三处同步（tauri.conf.json + Cargo.toml + build-dmg.sh）
+- [ ] git commit 后 hook 自动推送到 origin + gitee main
+- [ ] git tag + git push --tags 双仓库
 - [ ] GitHub Releases 上传 DMG
+- [ ] 干净环境验证 DMG 可运行
+- [ ] 更新 PROJECT-HANDBOOK.md 开发日志
+- [ ] 更新记忆系统沉淀新 Trap/经验

@@ -71,8 +71,8 @@ npm run tauri dev
 
 | 区域 | 数量 | 规则 | 典型文件 |
 |------|------|------|----------|
-| **[lock]** | 17 | 禁止 write_to_file，只能 replace_in_file | platform.rs, engine/, UI 组件 |
-| **[stable]** | 6 | 仅添加依赖/改配置时修改 | Cargo.toml, tauri.conf.json |
+| **[lock]** | 19 | 禁止 write_to_file，只能 replace_in_file | platform.rs, engine/, UI 组件, skills |
+| **[stable]** | 8 | 仅添加依赖/改配置时修改 | Cargo.toml, tauri.conf.json, auto-push |
 | **[active]** | 3 | 自由修改 | commands.rs, transcribe.rs, deploy.rs |
 
 **硬约束**：
@@ -104,7 +104,7 @@ npm run tauri dev
 | G4 | 零外部 dylib 引用 | otool -L 零 /opt/homebrew |
 | G5 | DMG 存在 | 文件 >10MB |
 | G6 | ad-hoc 签名 | codesign 通过 |
-| G7 | BASELINE.toml 完整 | lock=17, stable=6, active=3 |
+| G7 | BASELINE.toml 完整 | lock=19, stable=8, active=3 |
 | G8 | 无死代码 | 零 unused import / dead_code warning |
 
 ---
@@ -134,6 +134,22 @@ git push gitee --tags
 
 - `origin` → git@github.com:jaminliu89/voice2text.git (主)
 - `gitee` → https://gitee.com/jaminkim/voice2text.git (镜像)
+
+### 6.1 版本变更自动推送
+
+```
+git commit (含版本号变更)
+    │
+    └── .githooks/post-commit
+         └── scripts/auto-push-on-version.sh
+              ├── 检测 tauri.conf.json / Cargo.toml 是否变更
+              ├── 版本未变 → "跳过自动推送" 静默退出
+              └── 版本已变 → git push origin + gitee + 提示打 tag
+```
+
+安装 hook：`git config core.hooksPath .githooks`
+
+每次 commit 后自动运行，非版本变更的普通 commit 不影响开发节奏。
 
 ---
 

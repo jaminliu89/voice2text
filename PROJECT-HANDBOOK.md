@@ -94,6 +94,18 @@
   - `.githooks/post-commit`：git post-commit hook 触发自动推送
   - 安装：`git config core.hooksPath .githooks`
 
+### Day 10 — 工作流指南强化 + 双库同步
+- **workflow.md 数值校正**：
+  - BASELINE 计数 17→19 (lock) / 6→8 (stable)
+  - G7 质量门禁同步 lock=19, stable=8, active=3
+  - 新增 §6.1 版本变更自动推送机制说明
+- **release.md 增强**：
+  - 来源列表标注 `src-tauri/` 路径前缀
+  - 补充 hook 自动推送流程说明
+  - 发布检查清单扩展至 15 项（含 G7/G8 + PROJECT-HANDBOOK 更新）
+- **双仓库推送验证**：HEAD `e0f7016` 在 origin + gitee 完全同步
+- **git hook 正常工作**：非版本变更 commit 正确跳过自动推送
+
 ---
 
 ## 二、技术架构
