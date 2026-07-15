@@ -1,0 +1,260 @@
+[baseline]
+version = "1.0"
+project = "voice2text"
+created = "2026-07-15"
+description = "项目基线锁定文件，标记所有已验证正确的文件。"
+
+# ═══════════════════════════════════════
+# 冻结区：这些文件已跑通完整流程验证
+# 禁止 write_to_file 全量覆盖
+# 只能用 replace_in_file 做最小增量改动
+# 且每次改动必须通过 diff review
+# ═══════════════════════════════════════
+
+[lock."src-tauri/src/platform.rs"]
+category = "core"
+reason = "双引擎统一加速检测 + MPS 运行时探测，零 warning 编译通过"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/engine/mod.rs"]
+category = "core"
+reason = "引擎分发入口，platform 参数传递正确"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/engine/python_whisper.rs"]
+category = "core"
+reason = "Python 引擎，MPS 加速 + CPU 回退逻辑完整"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/engine/whisper_cpp.rs"]
+category = "core"
+reason = "标准引擎 whisper.cpp CLI 调用，model/file 路径正确"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/engine/download.rs"]
+category = "core"
+reason = "模型下载逻辑，URL + 文件管理已验证"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/postprocess.rs"]
+category = "core"
+reason = "后处理输出管道 (MD/SRT/VTT/TXT/提词稿)，繁简转换 + 段落分段"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/postprocess/t2s.rs"]
+category = "core"
+reason = "繁→简转换表 (~650组)，OnceLock 懒初始化"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/lib.rs"]
+category = "entry"
+reason = "Tauri 入口 — register commands + plugin 初始化"
+frozen_at = "2026-07-15"
+
+[lock."src-tauri/src/main.rs"]
+category = "entry"
+reason = "main 函数入口，禁止随意修改"
+frozen_at = "2026-07-15"
+
+[lock."src/main.ts"]
+category = "entry"
+reason = "前端 Svelte 入口"
+frozen_at = "2026-07-15"
+
+[lock."src/App.svelte"]
+category = "ui"
+reason = "根组件，文件拖拽 + 转写流程调度"
+frozen_at = "2026-07-15"
+
+[lock."src/lib/components/DropZone.svelte"]
+category = "ui"
+reason = "拖拽区域组件，原生拖拽事件处理"
+frozen_at = "2026-07-15"
+
+[lock."src/lib/components/FileList.svelte"]
+category = "ui"
+reason = "文件列表组件，状态展示正确"
+frozen_at = "2026-07-15"
+
+[lock."src/lib/components/ResultView.svelte"]
+category = "ui"
+reason = "结果预览 + 提词稿居中自适应缩放，双预览模式"
+frozen_at = "2026-07-15"
+
+[lock."src/lib/components/SettingsPanel.svelte"]
+category = "ui"
+reason = "设置面板，引擎/模型/格式选择 + 平台信息展示"
+frozen_at = "2026-07-15"
+
+[lock."src/lib/api.js"]
+category = "bridge"
+reason = "前端 invoke 封装层，所有 Tauri command 调用"
+frozen_at = "2026-07-15"
+
+[lock."src/app.css"]
+category = "style"
+reason = "全局样式表"
+frozen_at = "2026-07-15"
+
+[lock."src/vite-env.d.ts"]
+category = "config"
+reason = "Vite 类型声明"
+frozen_at = "2026-07-15"
+
+# ═══════════════════════════════════════
+# 基础设施区：配置文件，允许在添加依赖/改配置时修改
+# 但不能在修 bug 时被顺手改动
+# ═══════════════════════════════════════
+
+[stable."src-tauri/Cargo.toml"]
+category = "config"
+reason = "Rust 依赖清单 — 只在新增 crate 时修改"
+
+[stable."src-tauri/tauri.conf.json"]
+category = "config"
+reason = "Tauri 窗口/权限/插件配置"
+
+[stable."package.json"]
+category = "config"
+reason = "前端 npm 依赖 — 只在新增包时修改"
+
+[stable."svelte.config.js"]
+category = "config"
+reason = "Svelte 编译器配置"
+
+[stable."vite.config.js"]
+category = "config"
+reason = "Vite 构建配置"
+
+[stable."tsconfig.json"]
+category = "config"
+reason = "TypeScript 编译配置"
+
+# ═══════════════════════════════════════
+# 活跃开发区：这些文件允许正常修改
+# ═══════════════════════════════════════
+
+[active."src-tauri/src/commands.rs"]
+category = "bridge"
+reason = "Tauri 命令转发层，新增功能时修改"
+
+[active."src-tauri/src/transcribe.rs"]
+category = "orchestrator"
+reason = "转写任务调度协调，新特性迭代"
+
+[active."src-tauri/src/deploy.rs"]
+category = "devops"
+reason = "部署/打包逻辑"
+
+# ═══════════════════════════════════════
+# 工作流规则
+# ═══════════════════════════════════════
+
+[workflow]
+description = """
+  1. FREEZE: lock 区的文件只能用 replace_in_file 做最小增量修改。
+     - 禁止 write_to_file 全量覆盖任何 lock 区文件。
+     - 每次对 lock 区文件的修改，old_str 和 new_str 必须明确是局部改动。
+  2. REVIEW: lock 区文件的每次修改后，必须自动运行 diff check，
+     确认未引入无关改动（如意外删行、添加调试代码等）。
+  3. STABLE: stable 区的文件允许修改，但每次修改前需确认必要性。
+     修复 UI bug 不应该动 Cargo.toml。
+  4. ACTIVE: active 区的文件允许自由修改，无限制。
+  5. UNLOCK: 如需对 lock 文件做大范围修改，必须先更新 BASELINE.toml
+     将该文件移至 active 区，修改完成后视验证结果再冻回 lock 区。
+"""
+
+[workflow.constraints]
+# 以下是硬性约束（自动检查，不是 guideline）
+max_files_per_change = 3        # 单次修改不允许超过 3 个文件
+require_baseline_check = true   # 每次写操作前必须检查 BASELINE.toml
+lock_violation = "abort"        # 违规时中止并提示，不执行
+
+# ═══════════════════════════════════════
+# 交付闭环 SOP (Standard Operating Procedure)
+# ═══════════════════════════════════════
+
+[workflow.sop]
+description = """
+  每次任务完成后的标准闭环流程，确保修复不会回退、知识不会丢失。
+"""
+
+[workflow.sop.develop]
+# 开发阶段
+name = "开发迭代"
+steps = [
+  "1. 读 BASELINE.toml：确认目标文件所属区域 (lock/stable/active)",
+  "2. lock 区文件：只用 replace_in_file 做最小增量，禁止 write_to_file",
+  "3. stable 区文件：确认改动必要性（修UI不动Cargo.toml，修引擎不动UI组件）",
+  "4. active 区文件：自由修改，无限制",
+  "5. 单次改动 ≤3 文件，跨区自动检查"
+]
+
+[workflow.sop.verify]
+# 验证阶段
+name = "构建验证"
+steps = [
+  "1. cargo build --manifest-path src-tauri/Cargo.toml 零 error 零 warning",
+  "2. 检查改动的 diff：确认未引入无关变更（意外删行、调试代码残留）",
+  "3. 如有 lock 区文件改动，做 diff review 确认 old_str → new_str 映射精确",
+  "4. 启动 DEV 模式 (npm run tauri dev) 验证正向用例",
+  "5. 验证边界用例：不推荐模型时的错误提示、空文件、坏格式输入"
+]
+
+[workflow.sop.deliver]
+# 交付阶段
+name = "交付闭环"
+steps = [
+  "1. 验证关键功能路径：拖入文件 → 引擎检测 → 模型存在 → 转写成功 → 结果预览 → 导出",
+  "2. 确认质量门禁 G1-G8 全部通过 (见 PROJECT-HANDBOOK.md 9.4)",
+  "3. 更新 BASELINE.toml：将新验证通过的文件加入 lock 区，注明原因和时间",
+  "4. 更新 PROJECT-HANDBOOK.md：记录开发日志、新发现的 Trap、架构变更",
+  "5. 更新记忆系统：对本次交付中形成的规则/陷阱/模板，调用 update_memory 沉淀为持久知识",
+  "6. 最终确认：用户反馈 '能正常使用' 即交付成功，闭环完成"
+]
+
+[workflow.sop.close]
+# 闭环节点
+name = "经验闭环"
+steps = [
+  "1. 盘点本次交付中新发现的 Trap 或反模式 → 写入 PROJECT-HANDBOOK.md Trap速查表",
+  "2. 如 BASELINE.toml 文件分类需要调整 → 更新 lock/stable/active 边界",
+  "3. 如规则需要强化 → 更新记忆，增加红线标记",
+  "4. 如工具链/脚本需要改进 → 更新 scripts/ 目录",
+  "5. 输出闭环总结：改了哪些文件、学到了什么、下次如何避免"
+]
+
+# ═══════════════════════════════════════
+# 修复方法论 (Fix Methodology)
+# ═══════════════════════════════════════
+
+[workflow.fix_methodology]
+description = """
+  修 Bug 必须遵循的三层策略，避免修一个引入三个。
+  每次修完执行正向/边界/异常测试闭环。
+"""
+
+[workflow.fix_methodology.layer1]
+name = "直接修复层"
+scope = "语法错误、类型不匹配、路径错误、字段名变更"
+approach = "最小改动直接 fix，不碰任何无关代码"
+
+[workflow.fix_methodology.layer2]
+name = "引导式诊断层"
+scope = "逻辑错误、状态不一致、竞态条件"
+approach = "分析 3-5 种可能原因，给出诊断方法，用户确认后最小改动"
+
+[workflow.fix_methodology.layer3]
+name = "手动深度介入层"
+scope = "底层依赖 Bug、编译器 Bug、OS 兼容性问题"
+approach = "传统工具排查，保留完整日志链"
+
+[workflow.fix_methodology.regression]
+name = "回归测试清单"
+checks = [
+  "正向：正常输入 → 预期输出",
+  "边界：空输入、超大输入、错误格式 → 合理错误提示",
+  "异常：网络断开、磁盘满、权限不足 → 不崩溃，有兜底",
+  "引擎状态：平台推荐模型不存在 → 显示正确提示而非假就绪",
+  "竞态：快速连续操作、并发文件 → 状态不混乱"
+]

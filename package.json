@@ -1,0 +1,26 @@
+{
+  "name": "voice2text",
+  "version": "0.1.0",
+  "description": "小柳语音转写 - 本地离线语音转写工具",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "bundle-deps": "zsh scripts/bundle-all.sh",
+    "dist": "zsh scripts/build.sh"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "svelte": "^5.0.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "@tauri-apps/cli": "^2"
+  }
+}

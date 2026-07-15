@@ -1,0 +1,24 @@
+[package]
+name = "voice2text"
+version = "0.2.0"
+description = "小柳语音转写 - 本地离线语音转写"
+authors = ["kimliu"]
+edition = "2021"
+
+[lib]
+name = "voice2text_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "fs", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "rustls-tls"] }
+futures-util = "0.3"
