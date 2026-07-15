@@ -1,0 +1,21 @@
+#!/bin/bash
+# ============================================
+# Git post-commit hook
+# 每次 commit 后检测版本号是否变更
+# 如果变更 → 自动推送到双仓库
+# ============================================
+
+# 安装此 hook:
+#   git config core.hooksPath .githooks
+# 或:
+#   chmod +x .githooks/post-commit
+
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$HOOK_DIR")"
+
+# 检测 auto-push 脚本是否存在
+AUTO_PUSH="$PROJECT_DIR/scripts/auto-push-on-version.sh"
+
+if [ -f "$AUTO_PUSH" ]; then
+  bash "$AUTO_PUSH"
+fi

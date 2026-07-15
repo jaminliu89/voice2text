@@ -81,6 +81,19 @@
 - **发布产物**：`小柳语音转写_0.2.0_aarch64.dmg` (21MB)，内嵌 README.txt 使用说明
 - **GitHub Releases**：tag `v0.1.0` 推送到双仓库，DMG 作为 Release 附件
 
+### Day 9 — 技能沉淀 + 自动推送机制
+- **工作流 Skill 文档化**：
+  - `.codebuddy/skills/workflow.md` — 五阶段闭环 SOP / 三级文件分类 / Debug 策略 / 质量门禁 / 红线 / Tauri 陷阱
+  - `.codebuddy/skills/release.md` — 发布流程 / 版本号管理 / 自动推送 / 回滚操作
+- **兼容引擎检测增强**：
+  - `python_whisper.rs`：`canonicalize()` 解析 python3 symlink 真实路径 → 修复 `/usr/local/bin/python3` → Framework 的 whisper 定位失败
+  - 新增 `/Library/Frameworks/Python.framework/Versions` 扫描通道
+  - 新增 5 个 `#[cfg(test)]` 单元测试覆盖所有检测路径
+- **版本变更自动推送**：
+  - `scripts/auto-push-on-version.sh`：检测 HEAD commit 是否含版本文件变更（tauri.conf.json / Cargo.toml），自动 push 双仓库
+  - `.githooks/post-commit`：git post-commit hook 触发自动推送
+  - 安装：`git config core.hooksPath .githooks`
+
 ---
 
 ## 二、技术架构
@@ -274,8 +287,8 @@ voice2text/
 
 | 区域 | 文件 | 规则 |
 |------|------|------|
-| **[lock] 冻结区** (17) | platform.rs, engine/, postprocess.rs, t2s.rs, lib.rs, main.rs, main.ts, App.svelte, DropZone.svelte, FileList.svelte, ResultView.svelte, SettingsPanel.svelte, api.js, app.css, vite-env.d.ts, BASELINE.toml | **禁止 `write_to_file`**；只能用 `replace_in_file` 做最小增量改动 |
-| **[stable] 稳定区** (6) | Cargo.toml, tauri.conf.json, package.json, svelte.config.js, vite.config.js, tsconfig.json | 仅添加依赖/改配置时修改 |
+| **[lock] 冻结区** (19) | platform.rs, engine/, postprocess.rs, t2s.rs, lib.rs, main.rs, main.ts, App.svelte, DropZone.svelte, FileList.svelte, ResultView.svelte, SettingsPanel.svelte, api.js, app.css, vite-env.d.ts, BASELINE.toml, workflow.md, release.md | **禁止 `write_to_file`**；只能用 `replace_in_file` 做最小增量改动 |
+| **[stable] 稳定区** (8) | Cargo.toml, tauri.conf.json, package.json, svelte.config.js, vite.config.js, tsconfig.json, auto-push-on-version.sh, post-commit | 仅添加依赖/改配置时修改 |
 | **[active] 活跃区** (3) | commands.rs, transcribe.rs, deploy.rs | 允许自由修改 |
 
 ### 硬性约束
@@ -299,6 +312,7 @@ engine_bug_no_ui_change         # 修引擎 bug 不动 UI 组件
 | `bundle-all.sh` | **主依赖打包** — 递归收集 ffmpeg + whisper-cli 及所有 brew dylib → `@loader_path` + ad-hoc 签名 | 构建 DMG 前 / 新增外部依赖后 | ✅ 活跃 |
 | `build-dmg.sh` | **主构建入口** — 杀旧进程 → 备份 → bundle-all → tauri build → 嵌入 README → create-dmg → 质量审计 | 发布新版本时 | ✅ 活跃 |
 | `build.sh` | 构建入口转发 → 调用 `build-dmg.sh` | `npm run dist` | ✅ 活跃 |
+| `auto-push-on-version.sh` | **版本检测自动推送** — 检测 HEAD commit 版本文件变更，自动 push 双仓库 | git post-commit hook | ✅ 活跃 |
 | `dev-tail.sh` | DEV 日志监控 — `tail -f /tmp/voice2text-debug.log` | DEV 排查问题时 | ✅ 活跃 |
 | `bundle-ffmpeg.sh` | 旧版 ffmpeg 打包（仅处理 ffmpeg，不处理 whisper-cli） | — | ❌ 已废弃 |
 | `copy-dylibs.sh` | 旧版 dylib 复制（硬编码路径，不做 install_name_tool） | — | ❌ 已废弃 |
@@ -489,7 +503,7 @@ let bundled = exe_dir.join("../Resources/resources/ffmpeg-bundle/ffmpeg");
 | G4 | 无外部 dylib 引用 | `otool -L bundle内ffmpeg \| grep /opt/homebrew` | 零输出（全部 @loader_path） |
 | G5 | DMG 生成成功 | `ls -lh target/release/bundle/dmg/*.dmg` | 文件存在且 >50MB |
 | G6 | bundle 内 ffmpeg 签名 | `codesign -dv app内ffmpeg` 或直接运行 | 不被 Gatekeeper 拦截 |
-| G7 | BASELINE.toml 完整 | 检查 lock=17, stable=6, active=3 | 数量正确 |
+| G7 | BASELINE.toml 完整 | 检查 lock=19, stable=8, active=3 | 数量正确 |
 | G8 | 无死代码/未使用导入 | `cargo build` 输出 | 零 `unused import` / `dead_code` warning |
 
 ### 9.5 交付产物清单

@@ -101,6 +101,16 @@ category = "config"
 reason = "Vite 类型声明"
 frozen_at = "2026-07-15"
 
+[lock.".codebuddy/skills/workflow.md"]
+category = "knowledge"
+reason = "开发工作流 Skill 文档 — 五阶段闭环 SOP + 质量门禁 + 陷阱速查"
+frozen_at = "2026-07-16"
+
+[lock.".codebuddy/skills/release.md"]
+category = "knowledge"
+reason = "发布流程 Skill 文档 — 版本管理 + 自动推送 + 双仓库发布"
+frozen_at = "2026-07-16"
+
 # ═══════════════════════════════════════
 # 基础设施区：配置文件，允许在添加依赖/改配置时修改
 # 但不能在修 bug 时被顺手改动
@@ -129,6 +139,14 @@ reason = "Vite 构建配置"
 [stable."tsconfig.json"]
 category = "config"
 reason = "TypeScript 编译配置"
+
+[stable."scripts/auto-push-on-version.sh"]
+category = "automation"
+reason = "版本检测自动推送脚本 — 检测版本文件变更后自动 push 双仓库"
+
+[stable.".githooks/post-commit"]
+category = "automation"
+reason = "Git post-commit hook — 触发 auto-push-on-version.sh"
 
 # ═══════════════════════════════════════
 # 活跃开发区：这些文件允许正常修改
