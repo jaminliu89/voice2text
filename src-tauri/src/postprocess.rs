@@ -298,20 +298,23 @@ fn split_teleprompter_lines(text: &str, max_chars: usize) -> Vec<String> {
     for ch in text.chars() {
         cur.push(ch);
         if cur.chars().count() > max_chars {
-            // 回找最近的标点作为断行点
-            let break_at = cur
-                .char_indices()
+            // 回找最近的标点作为断行点（按字符索引，不是字节偏移）
+            let chars_vec: Vec<char> = cur.chars().collect();
+            let char_count = chars_vec.len();
+            let break_at = chars_vec
+                .iter()
+                .enumerate()
                 .rev()
-                .skip(1) // 跳过当前字符
-                .find(|(_, c)| punct.contains(c) || *c == ' ')
+                .skip(1) // 跳过刚 push 的当前字符
+                .find(|(_, c)| punct.contains(*c) || **c == ' ')
                 .map(|(i, _)| i + 1)
-                .unwrap_or(max_chars.min(cur.chars().count() - 1));
-            let mut line: String = cur.chars().take(break_at).collect();
+                .unwrap_or(max_chars.min(char_count.saturating_sub(1)));
+            let mut line: String = chars_vec.iter().take(break_at).collect();
             line = line.trim_end().to_string();
             if !line.is_empty() {
                 lines.push(line);
             }
-            let rest: String = cur.chars().skip(break_at).collect();
+            let rest: String = chars_vec.iter().skip(break_at).collect();
             cur = rest;
         }
         // 在强断句标点后主动断行
@@ -330,8 +333,45 @@ fn split_teleprompter_lines(text: &str, max_chars: usize) -> Vec<String> {
 fn build_vtt(segments: &[Segment]) -> String {
     let mut s = String::from("WEBVTT\n\n");
     for (_i, seg) in segments.iter().enumerate() {
-        s.push_str(&format!("{} - {}\n", vtt_time(seg.start), vtt_time(seg.end)));
+        s.push_str(&format!("{} --> {}\n", vtt_time(seg.start), vtt_time(seg.end)));
         s.push_str(&format!("{}\n\n", seg.text.trim()));
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vtt_uses_arrow_separator() {
+        let segs = vec![Segment { start: 0.0, end: 1.5, text: "hello".into() }];
+        let out = build_vtt(&segs);
+        assert!(out.contains(" --> "), "VTT must use ' --> ' per WebVTT spec, got:\n{}", out);
+        assert!(!out.contains("0:00:00.000 - "), "must not use bare hyphen separator");
+    }
+
+    #[test]
+    fn teleprompter_splits_chinese_by_char_count() {
+        // 40 中文字符，无标点，max_chars=12 → 至少要拆成 3+ 行
+        let text = "一二三四五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥春夏秋冬东西南北";
+        let lines = split_teleprompter_lines(text, 12);
+        assert!(lines.len() >= 3, "40-char Chinese text must split into ≥3 lines at max=12, got {} lines: {:?}", lines.len(), lines);
+        for line in &lines {
+            assert!(
+                line.chars().count() <= 14,
+                "each line should stay near max_chars=12, got {} chars: {:?}",
+                line.chars().count(),
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn teleprompter_breaks_at_punctuation() {
+        let text = "今天天气不错，我们出去散步吧，顺便买点东西。";
+        let lines = split_teleprompter_lines(text, 12);
+        // 应该在逗号/句号处断行
+        assert!(lines.len() >= 2, "should split at punctuation: {:?}", lines);
+    }
 }

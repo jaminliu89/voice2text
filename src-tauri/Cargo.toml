@@ -1,6 +1,6 @@
 [package]
 name = "voice2text"
-version = "0.2.0"
+version = "0.2.1"
 description = "小柳语音转写 - 本地离线语音转写"
 authors = ["kimliu"]
 edition = "2021"

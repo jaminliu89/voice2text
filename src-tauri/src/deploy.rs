@@ -888,9 +888,9 @@ fn log_build_dir(src: &Path) {
                 Some(format!("{}{}", name, marker))
             })
             .collect();
-        let _ = std::fs::write(
-            "/tmp/voice2text-debug.log",
-            format!("build dir: {}\n{} files", src.display(), names.join(", ")),
+        log_event(
+            "BUILD_DIR",
+            &format!("{}: {} files [{}]", src.display(), names.len(), names.join(", ")),
         );
     }
 }
